@@ -1,0 +1,6 @@
+llm_baseline_prompt/config/config.ini
+__pycache__/
+*.pyc
+logs/
+*.npz
+.idea/

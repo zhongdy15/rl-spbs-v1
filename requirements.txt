@@ -1,0 +1,15 @@
+gym==0.21
+stable-baselines3[extra]>=1.7.0,<2.0
+sb3-contrib>=1.7.0,<2.0
+numpy
+scikit-learn
+hnswlib
+json_repair
+openai
+pyyaml>=5.1
+cloudpickle>=1.5.0
+optuna
+scikit-optimize
+tqdm
+rich
+huggingface_sb3>=2.2.1,<3.*

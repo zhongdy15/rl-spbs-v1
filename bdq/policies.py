@@ -1,0 +1,168 @@
+from typing import Any, Dict, List, Optional, Type
+
+import torch as th
+from gym import spaces
+from torch import nn
+
+from stable_baselines3.common.policies import BasePolicy
+from stable_baselines3.common.torch_layers import (
+    BaseFeaturesExtractor,
+    CombinedExtractor,
+    FlattenExtractor,
+    NatureCNN,
+    create_mlp,
+)
+from stable_baselines3.common.type_aliases import Schedule
+
+
+class BDQNetwork(BasePolicy):
+
+    def __init__(
+        self,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        features_extractor: nn.Module,
+        features_dim: int,
+        net_arch: Optional[List[int]] = None,
+        activation_fn: Type[nn.Module] = nn.ReLU,
+        normalize_images: bool = True,
+    ):
+        super().__init__(
+            observation_space,
+            action_space,
+            features_extractor=features_extractor,
+            normalize_images=normalize_images,
+        )
+
+        if net_arch is None:
+            net_arch = [64, 64]
+
+        print("Creating BDQNetwork")
+        self.net_arch = net_arch
+        self.activation_fn = activation_fn
+        self.features_extractor = features_extractor
+        self.features_dim = features_dim
+
+        action_nvec = self.action_space.nvec
+        shared_reprentation = create_mlp(self.features_dim, -1, self.net_arch, self.activation_fn)
+        self.shared_reprentation = nn.Sequential(*shared_reprentation)
+
+        self.value_head = nn.Linear(self.net_arch[-1], 1)
+        self.adv_heads = nn.ModuleList([nn.Linear(self.net_arch[-1], ac_dim) for ac_dim in action_nvec])
+
+
+    def forward(self, obs: th.Tensor) -> th.Tensor:
+        out = self.shared_reprentation(self.extract_features(obs, self.features_extractor))
+        value = self.value_head(out)
+        advs = th.stack([l(out) for l in self.adv_heads], dim=1)
+
+        test = advs.mean(2, keepdim=True)
+        q_val = value.unsqueeze(2) + advs - advs.mean(2, keepdim=True)
+
+        return q_val
+
+
+    def _predict(self, observation: th.Tensor, deterministic: bool = True) -> th.Tensor:
+
+        q_values = self(observation).squeeze(0)
+        action = th.argmax(q_values, dim=1)
+        return action
+
+    def _get_constructor_parameters(self) -> Dict[str, Any]:
+        data = super()._get_constructor_parameters()
+
+        data.update(
+            dict(
+                net_arch=self.net_arch,
+                features_dim=self.features_dim,
+                activation_fn=self.activation_fn,
+                features_extractor=self.features_extractor,
+            )
+        )
+        return data
+
+
+class BDQPolicy(BasePolicy):
+
+    def __init__(
+        self,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        lr_schedule: Schedule,
+        net_arch: Optional[List[int]] = None,
+        activation_fn: Type[nn.Module] = nn.ReLU,
+        features_extractor_class: Type[BaseFeaturesExtractor] = FlattenExtractor,
+        features_extractor_kwargs: Optional[Dict[str, Any]] = None,
+        normalize_images: bool = True,
+        optimizer_class: Type[th.optim.Optimizer] = th.optim.Adam,
+        optimizer_kwargs: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(
+            observation_space,
+            action_space,
+            features_extractor_class,
+            features_extractor_kwargs,
+            optimizer_class=optimizer_class,
+            optimizer_kwargs=optimizer_kwargs,
+            normalize_images=normalize_images,
+        )
+
+        print("Creating BDQPolicy")
+        if net_arch is None:
+            if features_extractor_class == NatureCNN:
+                net_arch = []
+            else:
+                net_arch = [64, 64]
+
+        self.net_arch = net_arch
+        self.activation_fn = activation_fn
+
+        self.net_args = {
+            "observation_space": self.observation_space,
+            "action_space": self.action_space,
+            "net_arch": self.net_arch,
+            "activation_fn": self.activation_fn,
+            "normalize_images": normalize_images,
+        }
+
+        self.q_net, self.q_net_target = None, None
+        self._build(lr_schedule)
+
+    def _build(self, lr_schedule: Schedule) -> None:
+
+        self.q_net = self.make_q_net()
+        self.q_net_target = self.make_q_net()
+        self.q_net_target.load_state_dict(self.q_net.state_dict())
+        self.q_net_target.set_training_mode(False)
+
+        self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
+
+    def make_q_net(self) -> BDQNetwork:
+        net_args = self._update_features_extractor(self.net_args, features_extractor=None)
+        return BDQNetwork(**net_args).to(self.device)
+
+    def forward(self, obs: th.Tensor, deterministic: bool = True) -> th.Tensor:
+        return self._predict(obs, deterministic=deterministic)
+
+    def _predict(self, obs: th.Tensor, deterministic: bool = True) -> th.Tensor:
+        return self.q_net._predict(obs, deterministic=deterministic)
+
+    def _get_constructor_parameters(self) -> Dict[str, Any]:
+        data = super()._get_constructor_parameters()
+
+        data.update(
+            dict(
+                net_arch=self.net_args["net_arch"],
+                activation_fn=self.net_args["activation_fn"],
+                lr_schedule=self._dummy_schedule,
+                optimizer_class=self.optimizer_class,
+                optimizer_kwargs=self.optimizer_kwargs,
+                features_extractor_class=self.features_extractor_class,
+                features_extractor_kwargs=self.features_extractor_kwargs,
+            )
+        )
+        return data
+
+    def set_training_mode(self, mode: bool) -> None:
+        self.q_net.set_training_mode(mode)
+        self.training = mode

@@ -1,0 +1,4 @@
+[llm_api]
+url = http://localhost:8000/v1
+model = Meta-Llama-3-8B-Instruct-Merge
+api_key = EMPTY
