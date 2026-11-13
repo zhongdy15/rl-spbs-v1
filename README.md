@@ -1,5 +1,13 @@
 # RL-SPBS
 
+## Introduction
+
+The code implementation for the paper: Hierarchical Control Framework Integrating Large Language Models with Reinforcement Learning for Decarbonized HVAC Operation.
+
+
+<img src="1.png" width="90%">
+
+
 LLM-guided action-mask DQN for multi-room fan coil unit (FCU) control. The 4^7 joint fan-speed actions
 (7 rooms x 4 speeds) are pruned by an action mask, which comes from a nearest-neighbour cache of expert
 masks and falls back to an LLM when no close state is cached. The cache is updated with the LLM answers.
