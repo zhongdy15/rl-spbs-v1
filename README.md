@@ -23,7 +23,6 @@ Built on [RL Baselines3 Zoo](https://github.com/DLR-RM/rl-baselines3-zoo) and
 | Path | Content |
 | --- | --- |
 | `mask_DQN/` | `MaskDQN` (proposed), `OriginalDQN`, masked policy and replay buffer |
-| `bdq/` | Branching Dueling Q-Network |
 | `rl_zoo3/` | Training framework, `ActionMasker` wrapper and the action feasibility memory (KNN cache + LLM) |
 | `action_utils/` | Joint-action encoding and mask construction |
 | `interpret_obs.py` | Converts an observation into the text prompt for the LLM |
